@@ -16,6 +16,8 @@
 html, body { height: 100%; }
 body {
   margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
   color: var(--fg);
   background:
     radial-gradient(1100px 700px at 20% 10%, rgba(124, 255, 194, 0.08), transparent 55%),
@@ -49,7 +51,7 @@ body {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: clamp(90px, 16vh, 220px);
+  bottom: calc(clamp(90px, 16vh, 220px) + env(safe-area-inset-bottom));
   padding: 0;
   border: 0;
   background: transparent;
@@ -65,19 +67,25 @@ body {
 }
 
 main {
-  min-height: 100%;
-  padding: 56px 20px 26px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding:
+    max(28px, env(safe-area-inset-top))
+    20px
+    max(16px, env(safe-area-inset-bottom));
   position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto;
 }
 
 .hidden { display: none; }
 
 .homeCenter {
-  min-height: calc(100vh - 56px - 26px);
+  min-height: 0;
   display: grid;
-  place-content: center;
+  place-items: center;
   text-align: center;
-  padding: 10px;
+  padding: 10px 0;
 }
 .homeTitle {
   font-size: clamp(44px, 6vw, 78px);
@@ -95,9 +103,18 @@ main {
 }
 
 .homeMeta {
-  position: fixed;
-  left: 16px;
-  bottom: 14px;
+  position: static;
+  justify-self: start;
 }
 
 .muted { color: rgba(217, 247, 240, 0.52); font-size: 12px; }
+
+@media (max-width: 700px) {
+  #stageHint {
+    bottom: calc(clamp(56px, 11vh, 130px) + env(safe-area-inset-bottom));
+  }
+
+  .homeSub {
+    letter-spacing: 0.03em;
+  }
+}

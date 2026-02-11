@@ -34,6 +34,7 @@
   let w = 0, h = 0, dpr = 1;
   let particles = [];
   let targets = [];
+  let centerYRatio = 0.52;
 
   const state = {
     t0: performance.now(),
@@ -55,6 +56,7 @@
     dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     w = Math.max(1, Math.floor(rect.width));
     h = Math.max(1, Math.floor(rect.height));
+    centerYRatio = window.matchMedia("(max-width: 700px)").matches ? 0.5 : 0.52;
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -96,7 +98,7 @@
     octx.textAlign = "center";
     octx.textBaseline = "middle";
     octx.fillStyle = "#fff";
-    octx.fillText(text, ow * 0.5, oh * 0.52);
+    octx.fillText(text, ow * 0.5, oh * centerYRatio);
 
     const img = octx.getImageData(0, 0, ow, oh);
     const data = img.data;
@@ -132,7 +134,7 @@
   function buildImageTargets(width, height, imgEl) {
     const size = Math.floor(Math.min(width, height) * 0.56);
     const cx = Math.floor(width * 0.5);
-    const cy = Math.floor(height * 0.52);
+    const cy = Math.floor(height * centerYRatio);
 
     const off = document.createElement("canvas");
     off.width = size;
@@ -335,7 +337,7 @@
         p.x = lerp(p.x, p.tx, 0.08);
         p.y = lerp(p.y, p.ty, 0.08);
         // Tiny breathing pulse around center.
-        const cx = w * 0.5, cy = h * 0.52;
+        const cx = w * 0.5, cy = h * centerYRatio;
         p.x = cx + (p.x - cx) * breathe;
         p.y = cy + (p.y - cy) * breathe;
         p.alpha = lerp(p.alpha, 0.88, 0.03);
