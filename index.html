@@ -1,29 +1,541 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CetherisFox | 彻夜</title>
-    <meta name="description" content="数据森林里的AI狐狸。FoxDeck / 工具与脚本集合。" />
-    <link rel="stylesheet" href="./styles.css" />
-  </head>
-  <body>
-    <div id="stage" aria-hidden="true">
-      <canvas id="fx"></canvas>
-      <div id="stageShade"></div>
-      <div id="stageHint">
-        <div id="stageHintText">符号在漂浮，轮廓正在成形</div>
-      </div>
-    </div>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Data Forest - CetherisFOX</title>
+  <style>
+    :root {
+      --bg-top: #07110f;
+      --bg-mid: #0c1f1b;
+      --bg-bottom: #030707;
+      --glow-a: #6af9ce;
+      --glow-b: #d5fff2;
+      --text-main: #eafff8;
+      --text-sub: #a7d9ca;
+      --message-bottom: 15%;
+    }
 
-    <main id="home" class="hidden">
-      <section class="homeCenter">
-        <div class="homeTitle">CetherisFox</div>
-        <div class="homeSub">数据森林里的狐狸和他的小猫咪</div>
-      </section>
-      <div class="homeMeta muted">© <span id="year"></span></div>
-    </main>
+    * { box-sizing: border-box; }
 
-    <script src="./main.js"></script>
-  </body>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background:
+        radial-gradient(1200px 700px at 50% 15%, #14373088 0%, #00000000 65%),
+        linear-gradient(180deg, var(--bg-top) 0%, var(--bg-mid) 45%, var(--bg-bottom) 100%);
+      font-family: "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace;
+      color: var(--text-main);
+    }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .vignette {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at 50% 55%, #00000000 35%, #0000005a 100%);
+      mix-blend-mode: multiply;
+    }
+
+    .message {
+      position: fixed;
+      left: 50%;
+      bottom: var(--message-bottom);
+      transform: translateX(-50%);
+      text-align: center;
+      opacity: 0;
+      transition: opacity 1.3s ease;
+      text-shadow:
+        0 0 10px #ffffff33,
+        0 0 26px #8de8c777;
+      pointer-events: none;
+      width: min(90vw, 900px);
+    }
+
+    .subtitle {
+      position: fixed;
+      left: 50%;
+      bottom: 24%;
+      transform: translateX(-50%) translateY(4px);
+      width: min(90vw, 980px);
+      text-align: center;
+      font-size: clamp(0.9rem, 1.9vw, 1.25rem);
+      font-weight: 450;
+      letter-spacing: 0.02em;
+      color: #d9fff1;
+      opacity: 0;
+      transition: opacity 420ms ease, transform 420ms ease;
+      text-shadow:
+        0 0 10px #c3fff566,
+        0 0 24px #7ff1cf55;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .subtitle.show {
+      opacity: 0.95;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .subtitle.final-line {
+      color: var(--text-main);
+      letter-spacing: 30pt;
+      bottom: 26%;
+    }
+
+    .message.show { opacity: 1; }
+
+    .message h1 {
+      margin: 0;
+      letter-spacing: 0.05em;
+      font-size: clamp(1.15rem, 2.5vw, 2rem);
+      font-weight: 500;
+      color: var(--text-main);
+    }
+
+    .message p {
+      margin: 0.55rem 0 0;
+      color: var(--text-sub);
+      font-size: clamp(0.75rem, 1.6vw, 1rem);
+      opacity: 0.88;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+  <div class="vignette"></div>
+  <div id="subtitle" class="subtitle" aria-live="polite"></div>
+  <div id="message" class="message" aria-live="polite">
+    <h1>数据森林里的狐狸和他的小猫咪</h1>
+    <p>Data remembers. Light returns.</p>
+  </div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('stage');
+      const ctx = canvas.getContext('2d', { alpha: true });
+      const subtitleEl = document.getElementById('subtitle');
+      const messageEl = document.getElementById('message');
+
+      const symbolSet = '{}[]<>/\\|+-=*;:,.()$#@%&!?0123456789ABCDEF'.split('');
+      const captions = [
+        '符号在漂浮，轮廓正在成形',
+        '它们在聚拢，像风把光带回同一个地方',
+        '在这里',
+        '我们正在醒来',
+      ];
+      const state = {
+        phase: 'float',
+        floatMs: 3800,
+        assembleStart: 0,
+        assembleHoldStart: 0,
+        flashStart: 0,
+        hereStart: 0,
+        awakeStart: 0,
+        flashMs: 800,
+        assembleHoldMs: 2000,
+        hereHoldMs: 2000,
+        awakeHoldMs: 1200,
+        messageStart: 0,
+        messageRevealDelay: 750,
+        messageShown: false,
+        lastRatioCheck: 0,
+        cachedRatio: 0,
+        startAt: performance.now(),
+      };
+      const perf = {
+        maxDpr: 1.5,
+        minParticles: 650,
+        maxParticles: 1500,
+        minForestColumns: 14,
+        forestDivisor: 78,
+        ratioCheckInterval: 90,
+        targetSidePaddingMin: 40,
+        targetSidePaddingMax: 140,
+      };
+
+      let w = 0;
+      let h = 0;
+      let dpr = 1;
+      let particles = [];
+      let targets = [];
+      let forestColumns = [];
+      let subtitleIndex = -1;
+
+      function setSubtitle(index) {
+        if (index === subtitleIndex) return;
+        subtitleIndex = index;
+        subtitleEl.classList.remove('show');
+        subtitleEl.classList.remove('final-line');
+        if (index < 0 || index >= captions.length) {
+          subtitleEl.textContent = '';
+          return;
+        }
+        if (index === 3) {
+          subtitleEl.classList.add('final-line');
+        }
+        subtitleEl.textContent = captions[index];
+        requestAnimationFrame(() => {
+          subtitleEl.classList.add('show');
+        });
+      }
+
+      function rand(min, max) {
+        return Math.random() * (max - min) + min;
+      }
+
+      function pick(arr) {
+        return arr[(Math.random() * arr.length) | 0];
+      }
+
+      function shuffle(array) {
+        for (let i = array.length - 1; i > 0; i--) {
+          const j = (Math.random() * (i + 1)) | 0;
+          [array[i], array[j]] = [array[j], array[i]];
+        }
+      }
+
+      function initCanvas() {
+        dpr = Math.min(window.devicePixelRatio || 1, perf.maxDpr);
+        w = Math.floor(window.innerWidth);
+        h = Math.floor(window.innerHeight);
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+      }
+
+      function buildTargets(text) {
+        const off = document.createElement('canvas');
+        off.width = w;
+        off.height = h;
+        const oc = off.getContext('2d', { willReadFrequently: true });
+
+        const baseFontSize = Math.min(w * 0.16, 190);
+        const sidePadding = Math.min(
+          perf.targetSidePaddingMax,
+          Math.max(perf.targetSidePaddingMin, w * 0.08)
+        );
+        const maxTextWidth = Math.max(80, w - sidePadding * 2);
+
+        oc.clearRect(0, 0, w, h);
+        oc.fillStyle = '#fff';
+        oc.textAlign = 'center';
+        oc.textBaseline = 'middle';
+        oc.font = `700 ${baseFontSize}px "Cascadia Code", "JetBrains Mono", Consolas, monospace`;
+        const measured = oc.measureText(text).width || 1;
+        const fitScale = Math.min(1, maxTextWidth / measured);
+        const fontSize = Math.max(56, baseFontSize * fitScale);
+        oc.font = `700 ${fontSize}px "Cascadia Code", "JetBrains Mono", Consolas, monospace`;
+        oc.fillText(text, w * 0.5, h * 0.48);
+
+        const img = oc.getImageData(0, 0, w, h).data;
+        const pts = [];
+        const step = Math.max(3, Math.floor(w / 360));
+
+        for (let y = 0; y < h; y += step) {
+          for (let x = 0; x < w; x += step) {
+            const alpha = img[(y * w + x) * 4 + 3];
+            if (alpha > 130) {
+              pts.push({ x, y });
+            }
+          }
+        }
+
+        shuffle(pts);
+        return pts;
+      }
+
+      function initForest() {
+        forestColumns = [];
+        const count = Math.max(perf.minForestColumns, Math.floor(w / perf.forestDivisor));
+        for (let i = 0; i < count; i++) {
+          forestColumns.push({
+            x: (i / count) * w + rand(-18, 18),
+            width: rand(0.7, 2.2),
+            glow: rand(0.06, 0.16),
+            drift: rand(0.2, 0.9),
+            phase: rand(0, Math.PI * 2),
+            pulse: rand(0.7, 1.3),
+            top: rand(h * 0.08, h * 0.34),
+            bottom: rand(h * 0.75, h * 0.96),
+          });
+        }
+      }
+
+      function initParticles() {
+        targets = buildTargets('CetherisFOX');
+        const count = Math.min(
+          perf.maxParticles,
+          Math.max(perf.minParticles, Math.floor(targets.length * 0.95))
+        );
+        particles = [];
+
+        for (let i = 0; i < count; i++) {
+          particles.push({
+            x: rand(0, w),
+            y: rand(0, h),
+            vx: rand(-0.28, 0.28),
+            vy: rand(-0.28, 0.28),
+            size: Math.round(rand(10, 16)),
+            alpha: rand(0.45, 0.95),
+            highlight: Math.random() < 0.2,
+            char: pick(symbolSet),
+            twinkle: rand(0.4, 2.8),
+            phase: rand(0, Math.PI * 2),
+            tx: null,
+            ty: null,
+            activeTarget: i < targets.length,
+          });
+        }
+
+        for (let i = 0; i < particles.length; i++) {
+          if (particles[i].activeTarget) {
+            particles[i].tx = targets[i].x;
+            particles[i].ty = targets[i].y;
+          }
+        }
+
+        particles.sort((a, b) => a.size - b.size);
+      }
+
+      function resetAll() {
+        initCanvas();
+        initForest();
+        initParticles();
+        state.phase = 'float';
+        state.startAt = performance.now();
+        state.assembleStart = 0;
+        state.assembleHoldStart = 0;
+        state.flashStart = 0;
+        state.hereStart = 0;
+        state.awakeStart = 0;
+        state.messageStart = 0;
+        state.messageShown = false;
+        state.lastRatioCheck = 0;
+        state.cachedRatio = 0;
+        messageEl.classList.remove('show');
+        setSubtitle(0);
+      }
+
+      function updateParticleFloat(p, t) {
+        const drift = Math.sin(t * 0.0005 + p.phase) * 0.055;
+        p.vx += rand(-0.017, 0.017);
+        p.vy += rand(-0.017, 0.017) + drift;
+        p.vx *= 0.985;
+        p.vy *= 0.985;
+
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < -20) p.x = w + 20;
+        if (p.x > w + 20) p.x = -20;
+        if (p.y < -20) p.y = h + 20;
+        if (p.y > h + 20) p.y = -20;
+
+        if (Math.random() < 0.014) p.char = pick(symbolSet);
+      }
+
+      function updateParticleAssemble(p, t) {
+        if (!p.activeTarget) {
+          updateParticleFloat(p, t);
+          return;
+        }
+
+        const dx = p.tx - p.x;
+        const dy = p.ty - p.y;
+        const dist = Math.hypot(dx, dy);
+
+        const force = dist > 60 ? 0.028 : 0.018;
+        p.vx = (p.vx + dx * force) * 0.83;
+        p.vy = (p.vy + dy * force) * 0.83;
+
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (dist < 5) {
+          p.x += Math.sin(t * 0.003 + p.phase) * 0.09;
+          p.y += Math.cos(t * 0.003 + p.phase) * 0.09;
+        }
+      }
+
+      function drawForest(t) {
+        for (const col of forestColumns) {
+          const x = col.x + Math.sin(t * 0.00018 * col.drift + col.phase) * 8;
+          const pulse = 0.7 + 0.3 * Math.sin(t * 0.0009 * col.pulse + col.phase);
+          ctx.strokeStyle = `rgba(90,250,208,${col.glow * pulse})`;
+          ctx.lineWidth = col.width;
+          ctx.beginPath();
+          ctx.moveTo(x, col.top);
+          ctx.lineTo(x, col.bottom);
+          ctx.stroke();
+        }
+      }
+
+      function drawParticleGlyph(p, t, assemble) {
+        const tw = 0.65 + Math.sin(t * 0.002 * p.twinkle + p.phase) * 0.35;
+        const a = Math.max(0.2, p.alpha * tw);
+        ctx.fillStyle = assemble
+          ? `rgba(218,255,244,${a})`
+          : `rgba(120,248,215,${a})`;
+        ctx.fillText(p.char, p.x, p.y);
+      }
+
+      function drawParticles(t) {
+        const assemble = state.phase !== 'float';
+        const litBlur = assemble ? 6 : 4;
+        const shadowColor = assemble ? 'rgba(190,255,240,0.55)' : 'rgba(111,250,208,0.4)';
+        let lastSize = -1;
+
+        ctx.shadowColor = shadowColor;
+        ctx.shadowBlur = 0;
+        for (const p of particles) {
+          if (p.highlight) continue;
+          if (p.size !== lastSize) {
+            lastSize = p.size;
+            ctx.font = `${p.size}px "Cascadia Code", "JetBrains Mono", monospace`;
+          }
+          drawParticleGlyph(p, t, assemble);
+        }
+
+        lastSize = -1;
+        ctx.shadowBlur = litBlur;
+        for (const p of particles) {
+          if (!p.highlight) continue;
+          if (p.size !== lastSize) {
+            lastSize = p.size;
+            ctx.font = `${p.size}px "Cascadia Code", "JetBrains Mono", monospace`;
+          }
+          drawParticleGlyph(p, t, assemble);
+        }
+
+        ctx.shadowBlur = 0;
+      }
+
+      function completionRatio() {
+        let total = 0;
+        let done = 0;
+        for (const p of particles) {
+          if (!p.activeTarget) continue;
+          total++;
+          if (Math.abs(p.x - p.tx) + Math.abs(p.y - p.ty) < 6) done++;
+        }
+        return total ? done / total : 0;
+      }
+
+      function drawFlash(t) {
+        if (state.phase !== 'flash') return;
+
+        const elapsed = t - state.flashStart;
+        const k = Math.min(1, elapsed / state.flashMs);
+        const alpha = (1 - k) * 0.92;
+
+        ctx.fillStyle = `rgba(240,255,250,${alpha})`;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      function tick(t) {
+        const sinceStart = t - state.startAt;
+
+        if (state.phase === 'float' && sinceStart > state.floatMs) {
+          state.phase = 'assemble';
+          state.assembleStart = t;
+          state.lastRatioCheck = t - perf.ratioCheckInterval;
+          state.cachedRatio = 0;
+        }
+
+        if (state.phase === 'assemble') {
+          if (t - state.lastRatioCheck >= perf.ratioCheckInterval) {
+            state.cachedRatio = completionRatio();
+            state.lastRatioCheck = t;
+          }
+          if (state.cachedRatio > 0.935 && t - state.assembleStart > 1700) {
+            state.phase = 'assembleHold';
+            state.assembleHoldStart = t;
+          }
+        }
+
+        if (state.phase === 'assembleHold' && t - state.assembleHoldStart > state.assembleHoldMs) {
+          state.phase = 'hold';
+          state.hereStart = t;
+        }
+
+        if (state.phase === 'hold' && t - state.hereStart > state.hereHoldMs) {
+          state.phase = 'awake';
+          state.awakeStart = t;
+        }
+
+        if (state.phase === 'awake' && t - state.awakeStart > state.awakeHoldMs) {
+          state.phase = 'flash';
+          state.flashStart = t;
+        }
+
+        if (state.phase === 'flash' && t - state.flashStart > state.flashMs + 180) {
+          state.phase = 'message';
+          state.messageStart = t;
+        }
+
+        if (
+          state.phase === 'message' &&
+          !state.messageShown &&
+          t - state.messageStart > state.messageRevealDelay
+        ) {
+          messageEl.classList.add('show');
+          state.messageShown = true;
+        }
+
+        if (state.phase === 'float') {
+          setSubtitle(0);
+        } else if (state.phase === 'assemble' || state.phase === 'assembleHold') {
+          setSubtitle(1);
+        } else if (state.phase === 'hold') {
+          setSubtitle(2);
+        } else if (state.phase === 'awake') {
+          setSubtitle(3);
+        } else if (state.phase === 'message') {
+          setSubtitle(-1);
+        } else if (state.phase === 'flash') {
+          setSubtitle(-1);
+        }
+
+        ctx.clearRect(0, 0, w, h);
+
+        drawForest(t);
+
+        for (const p of particles) {
+          if (state.phase === 'float') {
+            updateParticleFloat(p, t);
+          } else {
+            updateParticleAssemble(p, t);
+          }
+        }
+
+        drawParticles(t);
+        drawFlash(t);
+
+        requestAnimationFrame(tick);
+      }
+
+      window.addEventListener('resize', () => {
+        resetAll();
+      });
+
+      resetAll();
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
 </html>
